@@ -1,0 +1,256 @@
+---
+title: "开原项目气象数据展示"
+author: "wellion"
+date: "2018年3月28日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 基本介绍
+
+本项目旨在通过项目地点相关信息的获取，查找附近的气象站点，并根据该气象站点编号，获取相关气象数据，用于可视化分析
+
+```{r cars, echo=FALSE, message=FALSE, warning=FALSE}
+# map of China ####
+library("leafletCN")
+library(leaflet)
+#demomap("china")
+weast <- read.csv(file = "D:/Data/datav/stations712 with weather data.csv")
+pop <- paste("气象站名称：",weast$mc,"<br/>",
+               
+               "ID：",weast$stationID,"<br/>",
+               
+               "省份：",weast$province,"<br/>",
+               
+               "经度：",weast$longitude,"<br/>",
+               
+               "纬度：",weast$latitude,"<br/>")
+  # 项目地块展示 #
+  leaflet(weast)%>%amap()%>%
+    addCircles(popup=pop, color="red")
+```
+
+## 经纬度坐标解析
+
+#### -首先根据项目地址解析出其经纬度坐标
+
+```{r Geoencoding, include=FALSE}
+#地理位置→经纬度####
+#read the address
+address <- "铁岭市开原八棵树镇八道岗子村"
+
+head(address)
+
+#建立备用向量，包括空向量及百度地图api秘钥
+ak <- 'hRMTft6Y932u2N5UX2cokQ8GvOE86UQl'    #百度地图api的秘钥，需自己申请
+#加载包
+library(rjson)
+library(RCurl)
+
+
+#生成规则的url地址(具体参数可参考Geocoding API文档)
+url <- paste('http://api.map.baidu.com/geocoder/v2/?ak=',ak,'&callback=renderOption&output=json&address=',address,sep='')
+#利用URLencode()转换为可解析的URL地址
+url_string <- URLencode(url)
+#通过readLines读取URL地址，并解析JSON格式的结果
+json<- readLines(url_string, warn=F)
+geo <- fromJSON(substr(json,regexpr('\\(',json)+1,nchar(json)-1))
+
+#在解析结果中提取经纬度
+lng<-geo$result$location$lng
+lat<-geo$result$location$lat
+
+#整理结果
+addlocation <- data.frame(address=address,longitude=lng,latitude=lat)
+
+```
+
+#### -解析过程略去，只展示解析的结果
+
+```{r, echo=TRUE}
+library(DT)
+datatable(addlocation)
+
+```
+
+#### -解析过坐标的位置展示在地图上
+
+```{r, message=FALSE, warning=FALSE}
+# shou the location
+leaflet(weast)%>%amap()%>%
+  addMarkers(popup=pop) %>%
+  addCircleMarkers(lng = addlocation$longitude,
+                   lat = addlocation$latitude,
+                   color="red") %>%
+  setView(lng = addlocation$longitude,
+          lat = addlocation$latitude,
+          zoom = 8)
+```
+
+
+## 附近气象站
+
+#### -根据当前位置查找附近气象站
+ 根据目标位置的经纬度坐标，计算其与各气象站点的距离，从中选择距离最近的k=5个气象站
+ 计算过程略过，只显示求解出的5个站点。在目的气象站的选择上要综合考虑，由于目标位置在辽宁开原地区，因此最终选择开原气象站作为目标气象站。
+
+```{r}
+# Nearest Neighbor Search####
+#k-Nearest Stations
+load(file="k5 nearest stations around target.rda")
+library(DT)
+datatable(kns5)
+
+```
+
+## 获取开原气象站气象数据
+
+#### -中国气象数据网下载累年逐日气象数据
+ 开原气象站编号为54254，根据该编号在气象数据网找到累年逐日气象数据。该数据包含了温度、降水和气压等气象要素。
+ 
+#### -全年温度变化展示 
+ 
+```{r, echo=FALSE}
+load(file="累积逐日气象数据.rda")
+library(data.table)
+
+wea <- cDT[stationID == "51058"] #辽宁开原
+
+TEM <- wea[,c("DOY","TEM_M","TEM_H","TEM_L")]
+
+#temperature vis of all year
+TEML <- melt(TEM, id.var = "DOY")
+names(TEML)[3] <- "Tempreture"
+TEML$variable <- factor(TEML$variable, labels=c("Mean", "Highest", "Lowest"))
+library(recharts)
+setDF(TEML)
+echartr(TEML, DOY, Tempreture, variable, type='line') %>% 
+  setTitle('Kaiyuan Temperature of Common Year') %>% 
+  setSymbols('emptycircle')
+
+```
+
+#### -将横坐标改为日期
+```{r, echo=FALSE}
+#temp vis by month
+library(weather)
+TEML$Date <- dateFromDoy(TEML$DOY,2017)
+TEML$Month <- monthFromDate(TEML$Date)
+TEML$Month <- factor(TEML$Month)
+TEML$Day <- dayFromDate(TEML$Date)
+TEML$Day <- as.character(TEML$Day)
+echartr(TEML, Date, Tempreture, variable, type='line') %>% 
+  setTitle('Kaiyuan Temperature of Common Year') %>% 
+  setSymbols('emptycircle')
+```
+
+#### -单独查看生长季（4-9月）期间的温度
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#selet months show
+library(dplyr)
+temp <- filter(TEML, Month %in% c("4","5","6","7","8","9")) 
+temp$Month <- factor(temp$Month, labels=c("Apr","May", "Jun", "Jul", "Aug", "Sep"))
+echartr(temp, Date, Tempreture, variable,type='line') %>% 
+setTitle('Kaiyuan Temperature of Common Year, by Month') %>% setSymbols('emptycircle')
+```
+
+#### -生长季不同月份日平均温度
+```{r, echo=FALSE}
+#不同月份平均温度
+temp_m <- filter(temp, variable %in% "Mean")
+echartr(temp_m, Day, Tempreture, Month, type='line') %>% 
+setTitle('Kaiyuan Mean Temperature of Common Year, by Month') %>% setSymbols('emptycircle')
+```
+
+#### -再看一下降水
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+PRE <- wea[,c("DOY","PRE_2020")]
+names(PRE)[2] <- "Rainfall"
+library(weather)
+PRE$Date <- dateFromDoy(PRE$DOY,2017)
+PRE$Date <- factor(PRE$Date)
+PRE$Month <- monthFromDate(PRE$Date)
+PRE$Month <- factor(PRE$Month)
+PRE$Day <- dayFromDate(PRE$Date)
+PRE$Day <- as.character(PRE$Day)
+setDF(PRE)
+echartr(PRE, Date, Rainfall, type='column') %>%
+  setTitle('Daily Rainfall ')
+```
+
+#### -月降水量分析
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Rainfall monthly
+PRE.monthly <- PRE %>%
+  group_by(Month) %>%
+  summarise(Rainfall = sum(Rainfall))
+# 带时间轴的条图Bar Chart with Timeline
+# options(repr.plot.width=4, repr.plot.height=3)
+echartr(PRE.monthly, Month, Rainfall,type='vbar') %>% 
+  setTitle("Rainfall in each month / mm")
+```
+
+## -降水量多年数据分析
+
+####  历史年降水量
+
+```{r}
+histor_wea <- read.csv("kaiyuan wth file for crop model.csv")
+head(histor_wea)
+#prepare the data
+wth <- histor_wea
+wth$Year <- factor(wth$Year)
+wth$Month <- weather::monthFromDate(wth$Date)
+wth$Month <- factor(wth$Month)
+wth$Day <- weather::dayFromDate(wth$Date)
+wth$Day <- factor(wth$Day)
+
+# Rainfall yearly
+require(dplyr)
+wth.yearly <- wth %>%
+  group_by(Year) %>%
+  summarise(Rainf = sum(rainfall))
+library(recharts)
+echartr(wth.yearly, Year, Rainf,type='vbar') %>%
+  setTitle('Rainfall across years') 
+```
+
+####  历史月降水量
+
+```{r}
+#Rainfall monthly
+wth.monthly <- wth %>%
+  group_by(Year,Month) %>%
+  summarise(Rainfall = sum(rainfall))
+# 带时间轴的条图Bar Chart with Timeline
+# options(repr.plot.width=4, repr.plot.height=3)
+echartr(wth.monthly, Month, Rainfall, t=Year, type='vbar') %>% 
+  setTitle("Rainfall in each month / mm")
+```
+
+#### 月降水量另一种展现形式
+
+```{r}
+# selet 10 years
+wth.monthly2 <-filter(wth.monthly,Year %in% c("2007","2008","2009","2010","2011","2012","2013","2014","2015","2016")) 
+echartr(wth.monthly2, Year, Rainfall, t=Month, type='vbar') %>% 
+  setTitle("Rainfall in each month / mm")
+```
+
+#### 历史温度
+
+```{r}
+tp <- filter(wth,Year %in% c("2011","2012","2013","2014","2015","2016")) 
+tp$Tmean <- (tp$Tmax +tp$Tmin)/2
+tp$Year <- factor(tp$Year)
+echartr(tp, Day, Tmean, Year,t=Month, type='line') %>%
+  setTitle('History Temperature, by Month') %>% 
+  setSymbols('emptycircle')
+```
+

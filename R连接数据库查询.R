@@ -18,7 +18,7 @@ res10 <- dbSendQuery(con, "SELECT * FROM `T_Main_Weather_Station_Data_2017_10` W
 res11 <- dbSendQuery(con, "SELECT * FROM `T_Main_Weather_Station_Data_2017_11` WHERE Station_Id_C=54171;")
 res12 <- dbSendQuery(con, "SELECT * FROM `T_Main_Weather_Station_Data_2017_12` WHERE Station_Id_C=54171;")
 # data <- dbFetch(res, n=2) #取前2条数据，n=-1时是获取所有数据  
-data <- dbFetch(res12, n=-1) #取余下所有数据 
+data <- dbFetch(res, n=-1) #取余下所有数据 
 head(data) 
 dim(data)
 
